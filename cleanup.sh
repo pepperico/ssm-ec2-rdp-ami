@@ -5,6 +5,37 @@
 
 set -e  # エラー時に停止
 
+# 使用方法の表示
+usage() {
+    echo "使用方法: $0 [--profile PROFILE_NAME]"
+    echo ""
+    echo "オプション:"
+    echo "  --profile PROFILE_NAME    使用するAWSプロファイルを指定"
+    echo ""
+    echo "例:"
+    echo "  $0                        # 現在のAWS設定を使用"
+    echo "  $0 --profile my-profile   # 指定したプロファイルを使用"
+    exit 0
+}
+
+# コマンドライン引数の解析
+AWS_PROFILE_ARG=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --profile)
+            AWS_PROFILE_ARG="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "不明なオプション: $1"
+            usage
+            ;;
+    esac
+done
+
 echo "============================================================="
 echo "  SSM-EC2-RDP 環境クリーンアップスクリプト"
 echo "============================================================="
@@ -46,10 +77,14 @@ fi
 # AWS認証の確認
 print_info "AWS認証を確認しています..."
 
-# cmプロファイルを自動設定
-if [ -z "$AWS_PROFILE" ]; then
-    export AWS_PROFILE=cm
-    print_info "AWSプロファイルを 'cm' に設定しました"
+# AWSプロファイルの設定
+if [ -n "$AWS_PROFILE_ARG" ]; then
+    export AWS_PROFILE="$AWS_PROFILE_ARG"
+    print_info "AWSプロファイルを '$AWS_PROFILE_ARG' に設定しました"
+elif [ -n "$AWS_PROFILE" ]; then
+    print_info "環境変数のAWSプロファイル '$AWS_PROFILE' を使用します"
+else
+    print_info "デフォルトのAWS設定を使用します"
 fi
 
 if ! aws sts get-caller-identity > /dev/null 2>&1; then
@@ -76,7 +111,12 @@ print_success "AWS認証が確認されました："
 aws sts get-caller-identity --query '[Account, UserId, Arn]' --output table
 
 # リージョン確認
-REGION=$(aws configure get region)
+if [ -n "$AWS_PROFILE" ]; then
+    REGION=$(aws configure get region --profile $AWS_PROFILE 2>/dev/null || echo "")
+else
+    REGION=$(aws configure get region 2>/dev/null || echo "")
+fi
+
 if [ -z "$REGION" ]; then
     REGION="ap-northeast-1"
     print_warning "AWSリージョンが設定されていません。デフォルトでap-northeast-1を使用します。"
@@ -120,7 +160,13 @@ if aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION 
         
         # CDKでスタックを削除
         print_info "CDKスタックを削除しています..."
-        if cdk destroy --profile cm --force; then
+        if [ -n "$AWS_PROFILE" ]; then
+            DESTROY_CMD="cdk destroy --profile $AWS_PROFILE --force"
+        else
+            DESTROY_CMD="cdk destroy --force"
+        fi
+        
+        if $DESTROY_CMD; then
             print_success "============================================"
             print_success "  スタックの削除が正常に完了しました！"
             print_success "============================================"

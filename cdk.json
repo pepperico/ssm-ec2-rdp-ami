@@ -92,8 +92,8 @@
     "@aws-cdk/aws-ec2:requirePrivateSubnetsForEgressOnlyInternetGateway": true,
     "@aws-cdk/aws-s3:publicAccessBlockedByDefault": true,
     "@aws-cdk/aws-lambda:useCdkManagedLogGroup": true,
-    "ami-id": "ami-0123456789abcdef0",
-    "instance-type": "t3.medium",
-    "key-pair-name": "your-key-pair"
+    "ami-id": "ami-0e68e34976bb4db93",
+    "instance-type": "t3.small",
+    "key-pair-name": "5112-OPT-TEST"
   }
 }

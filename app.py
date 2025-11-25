@@ -62,10 +62,13 @@ def print_configuration_help():
     "ami-id": "ami-0123456789abcdef0",          // 直接AMI IDを指定
     // または
     "ami-parameter": "/aws/service/ami-windows-latest/Windows_Server-2022-Japanese-Full-Base",
-    
+
     // 必須: インスタンスタイプ
     "instance-type": "t3.medium",
-    
+
+    // オプション: サブネットタイプ（デフォルト: "private"）
+    "subnet-type": "private",  // "private" または "public"
+
     // オプション: Key Pair名（SSM Session Manager使用時は不要）
     "key-pair-name": "my-key-pair"
   }
@@ -74,6 +77,9 @@ def print_configuration_help():
 📖 設定の詳細:
 • AMI設定: 直接AMI IDを指定するか、SSMパラメータパスを使用
 • インスタンスタイプ: EC2インスタンスタイプ（例: t3.medium, m5.large, c5.xlarge）
+• サブネットタイプ: "private"（プライベートサブネット）または "public"（パブリックサブネット）
+  - private: VPCエンドポイント経由でSSM接続のみ（デフォルト）
+  - public: パブリックIP自動割り当て、直接SSH/RDP接続可能
 • Key Pair: オプション、未指定の場合はSSM Session Managerでアクセス
 
 🔗 利用可能なAWS公式AMIパラメータ:

@@ -126,6 +126,7 @@ class TestInstanceConfiguration:
         config = InstanceConfiguration(instance_type="t3.medium")
         assert config.instance_type == "t3.medium"
         assert config.key_pair_name is None
+        assert config.subnet_type == "private"  # デフォルト値
     
     def test_valid_instance_type_with_key_pair(self):
         """Key Pair指定での正常作成テスト"""
@@ -186,7 +187,7 @@ class TestInstanceConfiguration:
                 key_pair_name=key_pair_name
             )
             assert config.key_pair_name == key_pair_name
-        
+
         # 間違った形式
         invalid_names = ["my@key", "my key", "my.key", "my#key", ""]
         for key_pair_name in invalid_names:
@@ -195,6 +196,36 @@ class TestInstanceConfiguration:
                     instance_type="t3.medium",
                     key_pair_name=key_pair_name
                 )
+
+    def test_subnet_type_default_value(self):
+        """サブネットタイプのデフォルト値テスト"""
+        config = InstanceConfiguration(instance_type="t3.medium")
+        assert config.subnet_type == "private"
+
+    def test_valid_subnet_types(self):
+        """有効なサブネットタイプでの正常作成テスト"""
+        # private
+        config_private = InstanceConfiguration(
+            instance_type="t3.medium",
+            subnet_type="private"
+        )
+        assert config_private.subnet_type == "private"
+
+        # public
+        config_public = InstanceConfiguration(
+            instance_type="t3.medium",
+            subnet_type="public"
+        )
+        assert config_public.subnet_type == "public"
+
+    def test_invalid_subnet_type_raise_error(self):
+        """無効なサブネットタイプでInvalidValueErrorが発生することをテスト"""
+        with pytest.raises(InvalidValueError) as exc_info:
+            InstanceConfiguration(
+                instance_type="t3.medium",
+                subnet_type="invalid"
+            )
+        assert "無効なサブネットタイプ" in str(exc_info.value)
 
 
 class TestEC2Configuration:
@@ -218,14 +249,16 @@ class TestEC2Configuration:
         context = {
             "ami-parameter": "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2",
             "instance-type": "m5.large",
-            "key-pair-name": "test-key"
+            "key-pair-name": "test-key",
+            "subnet-type": "public"
         }
         config = EC2Configuration.from_context(context)
-        
+
         assert config.ami.ami_parameter == "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
         assert config.ami.ami_id is None
         assert config.instance.instance_type == "m5.large"
         assert config.instance.key_pair_name == "test-key"
+        assert config.instance.subnet_type == "public"
     
     def test_from_context_invalid_settings(self):
         """無効な設定でのfrom_contextテスト"""

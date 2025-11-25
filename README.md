@@ -1,169 +1,161 @@
-# SSM経由でリモートデスクトップ接続可能なEC2環境（動的パラメータ対応版）
+# SSM経由でEC2にセキュアにアクセスする環境構築
 
-このプロジェクトでは、AWS CDKを使用してSSM（Session Manager）経由でリモートデスクトップ接続が可能なWindows EC2インスタンスを作成します。
+AWS CDKを使用して、SSM (Session Manager) 経由でセキュアにアクセス可能なEC2環境を構築するプロジェクトです。
+Windows ServerとLinuxの両方に対応しており、プライベートサブネットに配置されたEC2インスタンスにインターネットゲートウェイなしでアクセスできます。
 
-**🆕 新機能**: cdk.jsonコンテキスト値でWindows Serverのバージョンと言語を動的に選択可能！
+## 主な機能
+
+- 🔒 **セキュアなアクセス**: SSM経由のみでEC2にアクセス（インターネットゲートウェイ不要）
+- 🖥️ **柔軟なAMI選択**: 直接AMI IDまたはSSMパラメータで任意のOSを選択可能
+- 🪟 **Windows対応**: RDP接続をEC2 Instance Connect Endpoint経由で実現
+- 🐧 **Linux対応**: SSH接続をSSM Session Manager経由で実現
+- ⚙️ **自動設定**: UserDataによるOS別の初期設定を自動実行
 
 ## 構築されるリソース
 
-- VPC（NAT Gateway無し）
-- プライベートサブネット（2つのAZ）
-- セキュリティグループ（HTTPS送信のみ許可）
-- Windows Server EC2インスタンス（t3.medium、動的に選択可能なバージョン・言語）
-- SSM用IAMロール
-- VPCエンドポイント（SSM、SSM Messages、EC2 Messages）
-- EC2 Instance Connect Endpoint（EICEによるRDPアクセス用）
+| リソース | 説明 |
+|---------|------|
+| VPC | NAT Gateway無し、Public + Private Isolated サブネット (2 AZ) |
+| セキュリティグループ | HTTPS送信のみ許可（SSM通信用） |
+| EC2インスタンス | 任意のAMI、インスタンスタイプを指定可能 |
+| IAMロール | SSM Session Manager用の権限 |
+| VPCエンドポイント | SSM、SSM Messages用 |
+| EC2 Instance Connect Endpoint | RDPアクセス用（Windows環境） |
 
 ## 前提条件
 
 - AWS CLI設定済み
-- AWS CDK CLI インストール済み
+- AWS CDK CLI インストール済み (`npm install -g aws-cdk`)
 - Python 3.7以上
+- 仮想環境（推奨）
 
-## デプロイ手順
+## クイックスタート
 
-1. 仮想環境をアクティベート：
+### 1. 環境準備
+
 ```bash
+# リポジトリのクローン（既にある場合はスキップ）
+cd /Users/takasato.wataru/claudecode-pj/ssm-ec2-rdp-ami
+
+# 仮想環境をアクティベート
 source .venv/bin/activate
-```
 
-2. 依存関係をインストール：
-```bash
+# 依存関係をインストール
 pip install -r requirements.txt
 ```
 
-3. CDKをブートストラップ（初回のみ）：
-```bash
-cdk bootstrap
-```
+### 2. 設定ファイルの編集
 
-4. スタックをデプロイ：
+`cdk.json` の `context` セクションを編集します:
 
-### パラメータ設定方法
-
-**cdk.jsonを編集:**
 ```json
 {
   "context": {
-    "windows-version": "2019",
-    "windows-language": "Japanese",
-    "key-pair-name": "your-key-pair-name"
+    "ami-id": "ami-xxxxxxxxxxxxxxxxx",
+    "instance-type": "t3.medium",
+    "key-pair-name": "your-key-pair"
   }
 }
 ```
 
-**利用可能なwindows-versionの値**: `"2016"`, `"2019"`, `"2022"`, `"2025"`
+#### 設定パラメータ
 
-**デプロイ実行:**
+| パラメータ | 必須 | 説明 | 例 |
+|-----------|------|------|-----|
+| `ami-id` | ◯* | AMI ID | `"ami-0a71a0b9c988d5e5e"` |
+| `ami-parameter` | ◯* | SSMパラメータパス | `"/aws/service/ami-windows-latest/Windows_Server-2022-Japanese-Full-Base"` |
+| `instance-type` | ◯ | EC2インスタンスタイプ | `"t3.medium"`, `"m5.large"` |
+| `key-pair-name` | - | キーペア名（オプション） | `"my-key-pair"` |
+
+\* `ami-id` または `ami-parameter` のいずれか一つを指定
+
+#### よく使うSSMパラメータ例
+
+**Windows Server:**
+- Windows Server 2022 日本語: `/aws/service/ami-windows-latest/Windows_Server-2022-Japanese-Full-Base`
+- Windows Server 2022 英語: `/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base`
+- Windows Server 2019 日本語: `/aws/service/ami-windows-latest/Windows_Server-2019-Japanese-Full-Base`
+
+**Linux:**
+- Amazon Linux 2023: `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64`
+- Amazon Linux 2: `/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2`
+- Ubuntu 22.04: `/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id`
+
+### 3. デプロイ
+
 ```bash
-# CDKコマンドを直接使用
+# CDKブートストラップ（初回のみ）
+cdk bootstrap --profile cm
+
+# デプロイ実行
 cdk deploy --profile cm --require-approval never
 
 # または便利なスクリプトを使用
 ./setup_and_deploy.sh
 ```
 
-**注意**: 異なるバージョンをデプロイするには事前にcdk.jsonを手動編集してください。
+### 4. アクセス方法
 
-## リモートデスクトップ接続方法
+デプロイ完了後のアクセス方法はOSによって異なります。
 
-### 1. EC2 Instance Connect Endpointでポートフォワーディング
+- **Windows環境**: [Windows接続ガイド](docs/windows-setup.md)を参照
+- **Linux環境**: [Linux接続ガイド](docs/linux-setup.md)を参照
 
-```bash
-# 新しいインスタンスIDを取得
-aws ec2 describe-instances --filters "Name=tag:Name,Values=SsmEc2RdpDynamicStack-Takasato/SsmEc2RdpInstance" "Name=instance-state-name,Values=running" --profile cm --query 'Reservations[0].Instances[0].InstanceId' --output text
+## ドキュメント
 
-# RDPポートフォワーディング
-aws ec2-instance-connect open-tunnel --instance-id i-xxxxxxxxx --remote-port 3389 --local-port 13389 --profile cm
-```
+- 📘 [Windows環境セットアップガイド](docs/windows-setup.md) - Windows Server特有の設定とRDPアクセス手順
+- 📗 [Linux環境セットアップガイド](docs/linux-setup.md) - Linux特有の設定とSSHアクセス手順
+- 📙 [アーキテクチャ詳細](docs/architecture.md) - ネットワーク構成、セキュリティ設計の詳細
 
-### 2. Session Managerでポートフォワーディング（代替方法）
+## セキュリティ設計
 
-```bash
-# Windows用（PowerShell）
-aws ssm start-session --target i-xxxxxxxxx --document-name AWS-StartPortForwardingSession --parameters "portNumber=3389,localPortNumber=3389"
-
-# macOS/Linux用
-aws ssm start-session --target i-xxxxxxxxx --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["3389"],"localPortNumber":["3389"]}'
-```
-
-### 3. リモートデスクトップクライアントで接続
-
-- **接続先**: localhost:13389 (EC2 Instance Connect使用時) または localhost:3389 (Session Manager使用時)
-- **ユーザー名**: rdpuser
-- **パスワード**: Password123!
-
-## 作成されるユーザー
-
-- **ユーザー名**: rdpuser
-- **パスワード**: Password123!
-- **権限**: Administratorsグループ、Remote Desktop Usersグループ
-
-## セキュリティ設定
-
-- インスタンスはプライベートサブネットに配置
-- SSM経由でのアクセスのみ許可
-- キーペアは不要
-- リモートデスクトップポートの直接アクセスは禁止
+- ✅ プライベートサブネットに配置、インターネットゲートウェイなし
+- ✅ SSM経由のみでアクセス可能
+- ✅ 最小限のアウトバウンドルール（HTTPS/443のみ）
+- ✅ VPCエンドポイント経由でAWSサービスと通信
+- ✅ EC2 Instance Connect Endpointによる安全なRDPアクセス（Windows）
 
 ## クリーンアップ
 
+リソースを削除する場合:
+
 ```bash
-cdk destroy
+cdk destroy --profile cm
+
+# または
+./cleanup.sh
 ```
-
-## 動的パラメータ機能
-
-### サポートされるWindows Serverバージョン
-- **2016**: Windows Server 2016
-- **2019**: Windows Server 2019
-- **2022**: Windows Server 2022（デフォルト）
-- **2025**: Windows Server 2025
-
-### サポートされる言語
-- **English**: 英語版
-- **Japanese**: 日本語版（デフォルト）
-
-### 設定可能なパラメータ
-- **windows-version**: Windows Serverバージョン（2016, 2019, 2022, または 2025）
-- **windows-language**: Windows Server言語（English または Japanese）
-- **key-pair-name**: EC2キーペア名（既存のキーペアを指定）
-
-### 有効な組み合わせ
-- Windows Server 2016 + English
-- Windows Server 2016 + Japanese
-- Windows Server 2019 + English
-- Windows Server 2019 + Japanese
-- Windows Server 2022 + English
-- Windows Server 2022 + Japanese
-- Windows Server 2025 + English
-- Windows Server 2025 + Japanese
-
-### パラメータ指定方法
-**cdk.jsonのコンテキスト値のみ**（実装済み）
-- デフォルト値: 2022 + Japanese
-
-### 実装方式の特徴
-- **cdk.json方式**: `cdk deploy`実行時も一貫した値が使用される
-- **明示的設定**: 予測可能で設定ミスが少ない
-- **シンプルな設定**: ファイル編集のみで全ての設定が完了
 
 ## 注意事項
 
-- このサンプルは検証目的のため、本番環境では適切なセキュリティ設定を行ってください
-- パスワードはデフォルトで設定されているため、本番環境では強力なパスワードまたは証明書認証を使用してください
-- VPCエンドポイントにより料金が発生します
+- ⚠️ このサンプルは検証・開発目的です。本番環境では適切なセキュリティ設定を行ってください
+- ⚠️ デフォルトパスワードが設定されています。本番環境では強力なパスワードまたは証明書認証を使用してください
+- 💰 VPCエンドポイントにより料金が発生します（約$0.01/時間 + データ転送量）
 
 ## トラブルシューティング
 
-### インスタンスがSSMに表示されない場合
+### インスタンスがSSMに表示されない
 
 1. IAMロールが正しく設定されているか確認
-2. VPCエンドポイントが正常に作成されているか確認
+2. VPCエンドポイント（SSM、SSM Messages）が正常に作成されているか確認
 3. セキュリティグループでHTTPS送信が許可されているか確認
+4. SSM Agentが起動しているか確認（最新のAMIでは自動起動）
 
-### リモートデスクトップ接続ができない場合
+### デプロイエラーが発生する
 
-1. ポートフォワーディングが正常に動作しているか確認
-2. インスタンスでリモートデスクトップが有効になっているか確認
-3. ファイアウォール設定を確認
+1. `cdk.json`の設定を確認（AMI ID、インスタンスタイプの形式）
+2. AWS認証情報が正しく設定されているか確認
+3. 指定したAMI IDが存在するか確認
+4. 指定したKey Pairが存在するか確認（指定した場合）
+
+詳細は各OS別ドキュメントのトラブルシューティングセクションを参照してください。
+
+## ライセンス
+
+MIT License
+
+## 参考リンク
+
+- [AWS Systems Manager Session Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html)
+- [AWS CDK Python Reference](https://docs.aws.amazon.com/cdk/api/v2/python/)
+- [EC2 Instance Connect Endpoint](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/connect-using-eice.html)

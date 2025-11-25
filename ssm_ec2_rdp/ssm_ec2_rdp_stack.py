@@ -102,24 +102,51 @@ class SsmEc2RdpStack(Stack):
         # EC2.InstanceTypeにはオーバーロードされたコンストラクタがあり、文字列を直接受け取れる
         instance_type = ec2.InstanceType(config.instance.instance_type)
 
-        # EC2インスタンス作成（CfnInstanceを使用してAMI IDを直接指定）
-        # プライベートサブネットの取得
-        private_subnets = vpc.select_subnets(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED).subnet_ids
-        
-        # EC2インスタンス作成
-        cfn_instance = ec2.CfnInstance(
-            self, "SsmEc2RdpInstance",
-            image_id=config.ami.ami_id if config.ami.ami_id else "ami-020d982eb32b97ffc",  # 設定されたAMI ID or デフォルト
-            instance_type=config.instance.instance_type,
-            key_name=config.instance.key_pair_name if config.instance.key_pair_name else None,
-            subnet_id=private_subnets[0],  # 最初のプライベートサブネットを使用
-            security_group_ids=[security_group.security_group_id],
-            iam_instance_profile=instance_profile.ref,
-            user_data=Fn.base64(user_data.render()) if user_data else None,
-            tags=[
-                CfnTag(key="Name", value="SSM EC2 RDP Instance")
-            ]
+        # サブネットタイプに応じたサブネット選択
+        subnet_type_enum = (
+            ec2.SubnetType.PUBLIC if config.instance.subnet_type == "public"
+            else ec2.SubnetType.PRIVATE_ISOLATED
         )
+        selected_subnets = vpc.select_subnets(subnet_type=subnet_type_enum).subnet_ids
+
+        # EC2インスタンス作成（CfnInstanceを使用してAMI IDを直接指定）
+        # パブリックサブネット選択時はパブリックIPを自動割り当て
+        if config.instance.subnet_type == "public":
+            # パブリックサブネット: NetworkInterfacesでパブリックIP自動割り当て設定
+            cfn_instance = ec2.CfnInstance(
+                self, "SsmEc2RdpInstance",
+                image_id=config.ami.ami_id if config.ami.ami_id else "ami-020d982eb32b97ffc",
+                instance_type=config.instance.instance_type,
+                key_name=config.instance.key_pair_name if config.instance.key_pair_name else None,
+                iam_instance_profile=instance_profile.ref,
+                user_data=Fn.base64(user_data.render()) if user_data else None,
+                network_interfaces=[
+                    ec2.CfnInstance.NetworkInterfaceProperty(
+                        device_index="0",
+                        associate_public_ip_address=True,  # パブリックIP自動割り当て
+                        subnet_id=selected_subnets[0],
+                        group_set=[security_group.security_group_id]
+                    )
+                ],
+                tags=[
+                    CfnTag(key="Name", value="SSM EC2 RDP Instance")
+                ]
+            )
+        else:
+            # プライベートサブネット: 従来通りの設定
+            cfn_instance = ec2.CfnInstance(
+                self, "SsmEc2RdpInstance",
+                image_id=config.ami.ami_id if config.ami.ami_id else "ami-020d982eb32b97ffc",
+                instance_type=config.instance.instance_type,
+                key_name=config.instance.key_pair_name if config.instance.key_pair_name else None,
+                subnet_id=selected_subnets[0],
+                security_group_ids=[security_group.security_group_id],
+                iam_instance_profile=instance_profile.ref,
+                user_data=Fn.base64(user_data.render()) if user_data else None,
+                tags=[
+                    CfnTag(key="Name", value="SSM EC2 RDP Instance")
+                ]
+            )
 
         # VPCエンドポイントの作成（プライベートサブネットからSSMサービスへのアクセス用）
         vpc.add_interface_endpoint(

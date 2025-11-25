@@ -24,16 +24,38 @@ print_error() {
 
 # 使用方法の表示
 usage() {
-    echo "使用方法: $0"
+    echo "使用方法: $0 [--profile PROFILE_NAME]"
+    echo ""
+    echo "オプション:"
+    echo "  --profile PROFILE_NAME    使用するAWSプロファイルを指定"
     echo ""
     echo "注意: バージョンやパラメータの変更はcdk.jsonファイルを編集してください"
     echo ""
     echo "例:"
-    echo "  $0                                # cdk.jsonの設定に従ってデプロイ"
+    echo "  $0                                # 現在のAWS設定を使用"
+    echo "  $0 --profile my-profile           # 指定したプロファイルを使用"
     exit 0
 }
 
 # スクリプトが実行されているディレクトリの確認
+# コマンドライン引数の解析
+AWS_PROFILE_ARG=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --profile)
+            AWS_PROFILE_ARG="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "不明なオプション: $1"
+            usage
+            ;;
+    esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_NAME="ssm-ec2-rdp-dynamic"
 
@@ -63,14 +85,18 @@ pip install -r requirements.txt
 # AWS認証の確認
 print_info "AWS認証を確認しています..."
 
-# cmプロファイルを自動設定
-if [ -z "$AWS_PROFILE" ]; then
-    export AWS_PROFILE=cm
-    print_info "AWSプロファイルを 'cm' に設定しました"
+# AWSプロファイルの設定
+if [ -n "$AWS_PROFILE_ARG" ]; then
+    export AWS_PROFILE="$AWS_PROFILE_ARG"
+    print_info "AWSプロファイルを '$AWS_PROFILE_ARG' に設定しました"
+elif [ -n "$AWS_PROFILE" ]; then
+    print_info "環境変数のAWSプロファイル '$AWS_PROFILE' を使用します"
+else
+    print_info "デフォルトのAWS設定を使用します"
 fi
 
 if ! aws sts get-caller-identity > /dev/null 2>&1; then
-    print_error "AWS認証が設定されていません。"
+    print_error "AWS認証が設定されていません。--profile PROFILE_NAME オプションを使用してプロファイルを指定するか、AWS認証情報を設定してください。"
     print_info "認証設定スクリプトを実行しますか？ (y/n)"
     read -r answer
     if [ "$answer" = "y" ]; then
@@ -114,7 +140,12 @@ fi
 print_info "CDKバージョン: $(cdk --version)"
 
 # リージョン確認
-REGION=$(aws configure get region)
+if [ -n "$AWS_PROFILE" ]; then
+    REGION=$(aws configure get region --profile $AWS_PROFILE 2>/dev/null || echo "")
+else
+    REGION=$(aws configure get region 2>/dev/null || echo "")
+fi
+
 if [ -z "$REGION" ]; then
     REGION="ap-northeast-1"
     print_warning "AWSリージョンが設定されていません。デフォルトでap-northeast-1を使用します。"
@@ -134,11 +165,19 @@ if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION
     read -r answer
     if [ "$answer" = "y" ]; then
         print_info "CDKブートストラップを実行しています..."
-        cdk bootstrap aws://$ACCOUNT_ID/$REGION --profile cm
+        if [ -n "$AWS_PROFILE" ]; then
+            cdk bootstrap aws://$ACCOUNT_ID/$REGION --profile $AWS_PROFILE
+        else
+            cdk bootstrap aws://$ACCOUNT_ID/$REGION
+        fi
         print_success "CDKブートストラップが完了しました。"
     else
         print_error "CDKブートストラップを手動で実行してからもう一度試してください："
-        print_info "  cdk bootstrap --profile cm"
+        if [ -n "$AWS_PROFILE" ]; then
+            print_info "  cdk bootstrap --profile $AWS_PROFILE"
+        else
+            print_info "  cdk bootstrap"
+        fi
         exit 1
     fi
 else
@@ -147,7 +186,11 @@ fi
 
 # CloudFormationテンプレートの生成
 print_info "CloudFormationテンプレートを生成しています..."
-cdk synth --profile cm
+if [ -n "$AWS_PROFILE" ]; then
+    cdk synth --profile $AWS_PROFILE --region $REGION
+else
+    cdk synth --region $REGION
+fi
 
 # コスト警告
 print_warning "========== 重要：コストに関する注意 =========="
@@ -168,7 +211,13 @@ if [ "$answer" = "y" ]; then
     print_info "デプロイを開始しています..."
     
     # デプロイ実行
-    if cdk deploy --profile cm --require-approval never; then
+    if [ -n "$AWS_PROFILE" ]; then
+        DEPLOY_CMD="cdk deploy --profile $AWS_PROFILE --require-approval never"
+    else
+        DEPLOY_CMD="cdk deploy --require-approval never"
+    fi
+    
+    if $DEPLOY_CMD; then
         print_success "============================================"
         print_success "  デプロイが正常に完了しました！"
         print_success "============================================"
@@ -187,10 +236,18 @@ if [ "$answer" = "y" ]; then
         echo ""
         print_success "=== 次のステップ ==="
         print_info "1. インスタンスIDを確認:"
-        print_info "   aws ec2 describe-instances --profile cm --filters \"Name=tag:Name,Values=SsmEc2RdpDynamicStack-Takasato/SsmEc2RdpInstance\" \"Name=instance-state-name,Values=running\" --query 'Reservations[0].Instances[0].InstanceId' --output text"
+        if [ -n "$AWS_PROFILE" ]; then
+            print_info "   aws ec2 describe-instances --profile $AWS_PROFILE --filters \"Name=tag:Name,Values=SsmEc2RdpDynamicStack-Takasato/SsmEc2RdpInstance\" \"Name=instance-state-name,Values=running\" --query 'Reservations[0].Instances[0].InstanceId' --output text"
+        else
+            print_info "   aws ec2 describe-instances --filters \"Name=tag:Name,Values=SsmEc2RdpDynamicStack-Takasato/SsmEc2RdpInstance\" \"Name=instance-state-name,Values=running\" --query 'Reservations[0].Instances[0].InstanceId' --output text"
+        fi
         print_info ""
         print_info "2. ポートフォワーディング開始:"
-        print_info "   aws ssm start-session --profile cm --target <INSTANCE_ID> --document-name AWS-StartPortForwardingSession --parameters '{\"portNumber\":[\"3389\"],\"localPortNumber\":[\"3389\"]}'"
+        if [ -n "$AWS_PROFILE" ]; then
+            print_info "   aws ssm start-session --profile $AWS_PROFILE --target <INSTANCE_ID> --document-name AWS-StartPortForwardingSession --parameters '{\"portNumber\":[\"3389\"],\"localPortNumber\":[\"3389\"]}'" 
+        else
+            print_info "   aws ssm start-session --target <INSTANCE_ID> --document-name AWS-StartPortForwardingSession --parameters '{\"portNumber\":[\"3389\"],\"localPortNumber\":[\"3389\"]}'" 
+        fi
         print_info ""
         print_info "3. リモートデスクトップ接続:"
         print_info "   接続先: localhost:3389"
@@ -198,7 +255,11 @@ if [ "$answer" = "y" ]; then
         print_info "   パスワード: Password123!"
         print_info ""
         print_info "4. リソースを削除する場合:"
-        print_info "   cdk destroy --profile cm"
+        if [ -n "$AWS_PROFILE" ]; then
+            print_info "   cdk destroy --profile $AWS_PROFILE"
+        else
+            print_info "   cdk destroy"
+        fi
         print_info ""
         print_warning "注意: 使用完了後は必ずリソースを削除してコストを防止してください"
         

@@ -39,15 +39,21 @@ class ConfigurationManager:
     def _extract_context_values(self) -> Dict[str, Any]:
         """
         CDK Appのcontextから必要な設定値を抽出
-        
+
         Returns:
             Dict[str, Any]: 抽出された設定値の辞書
         """
+        # subnet-typeのデフォルト値は'private'
+        subnet_type = self.app.node.try_get_context('subnet-type')
+        if subnet_type is None:
+            subnet_type = 'private'
+
         return {
             'ami-id': self.app.node.try_get_context('ami-id'),
             'ami-parameter': self.app.node.try_get_context('ami-parameter'),
             'instance-type': self.app.node.try_get_context('instance-type'),
-            'key-pair-name': self.app.node.try_get_context('key-pair-name')
+            'key-pair-name': self.app.node.try_get_context('key-pair-name'),
+            'subnet-type': subnet_type
         }
     
     def print_help(self) -> None:

@@ -103,22 +103,29 @@ class InstanceConfiguration:
     """インスタンス設定を表すデータクラス"""
     instance_type: str
     key_pair_name: Optional[str] = None
-    
+    subnet_type: str = "private"  # デフォルトはプライベートサブネット
+
     def __post_init__(self):
         """設定の妥当性を検証"""
         if not self.instance_type:
             raise MissingConfigError("instance-typeは必須設定項目です。")
-        
+
         if not self._is_valid_instance_type(self.instance_type):
             raise InvalidValueError(
                 f"無効なインスタンスタイプ形式です: {self.instance_type}. "
                 "例: t3.medium, m5.large, c5.xlarge"
             )
-        
+
         if self.key_pair_name is not None and not self._is_valid_key_pair_name(self.key_pair_name):
             raise InvalidValueError(
                 f"無効なKey Pair名形式です: {self.key_pair_name}. "
                 "Key Pair名は英数字、ハイフン、アンダースコアのみ使用できます。"
+            )
+
+        if not self._is_valid_subnet_type(self.subnet_type):
+            raise InvalidValueError(
+                f"無効なサブネットタイプです: {self.subnet_type}. "
+                "'private' または 'public' を指定してください。"
             )
     
     @staticmethod
@@ -136,11 +143,20 @@ class InstanceConfiguration:
     def _is_valid_key_pair_name(key_pair_name: str) -> bool:
         """
         Key Pair名の形式をチェック
-        
+
         英数字、ハイフン、アンダースコアのみ許可
         例: my-key-pair, test_key, MyKey123
         """
         return bool(re.match(r'^[a-zA-Z0-9_-]+$', key_pair_name))
+
+    @staticmethod
+    def _is_valid_subnet_type(subnet_type: str) -> bool:
+        """
+        サブネットタイプの妥当性をチェック
+
+        許可される値: 'private', 'public'
+        """
+        return subnet_type in ['private', 'public']
 
 
 @dataclass
@@ -156,12 +172,13 @@ class EC2Configuration:
             ami_id=context.get('ami-id'),
             ami_parameter=context.get('ami-parameter')
         )
-        
+
         instance_config = InstanceConfiguration(
             instance_type=context.get('instance-type'),
-            key_pair_name=context.get('key-pair-name')
+            key_pair_name=context.get('key-pair-name'),
+            subnet_type=context.get('subnet-type', 'private')  # デフォルトはprivate
         )
-        
+
         return cls(ami=ami_config, instance=instance_config)
 
 
